@@ -12,4 +12,4 @@
 
 7. Plots: (a). GP posterior distribution, (b). GP prior samples, (c) GP Posterior samples. GP prior and posterior samples can be skipped from plotting by setting plot_samples = False in gp_wrapper()
 
-8. List of configurable parameters in gp_wrapper() method: (a). Number of observations (X),  (b) Number of test points (Xs), (c). Kernel type, (d). Objective function being modelled, (e) Characteristic length scale, (f). Signal variance, (g). Input space boundaries (used for plotting and generating random observations).
+8. List of configurable parameters in gp_wrapper() method: (a). Number of observations (X),  (b) Number of test points (Xs), (c) Kernel type, (d) Objective function being modelled, (e) Characteristic length scale, (f) Signal variance, (g) Input space boundaries (used for plotting and generating random observations).
