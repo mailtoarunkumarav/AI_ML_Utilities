@@ -1,0 +1,146 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import norm
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import Kernel
+from sklearn.utils.validation import check_array
+np.random.seed(42)
+
+
+# Synthetic objective function
+def objective_function(x):
+    return np.exp(-(x - 2) ** 2) + np.exp(-(x - 6) ** 2 / 10) + (1 / (x ** 2 + 1))
+
+
+# Custom RBF Kernel Implementation
+class CustomKernel_RBF(Kernel):
+    def __init__(self, length_scale=1.0):
+        self.length_scale = length_scale
+
+    def __call__(self, X, Y=None, eval_gradient=False):
+        X = check_array(X)
+        if Y is None:
+            Y = X
+        else:
+            Y = check_array(Y)
+
+        # Compute the squared Euclidean distance
+        dists = np.sum(X ** 2, axis=1).reshape(-1, 1) + np.sum(Y ** 2, axis=1) - 2 * np.dot(X, Y.T)
+
+        # Apply the RBF kernel formula
+        K = np.exp(-0.5 * dists / self.length_scale ** 2)
+
+        return K
+
+    def diag(self, X):
+        return np.ones(X.shape[0])
+
+    def is_stationary(self):
+        return True
+
+
+# GP-UCB acquisition function
+def acquisition_gp_ucb(X_pred, gp, iteration_count):
+    mu, sigma = gp.predict(X_pred, return_std=True)
+    delta = 0.3
+    b = 1
+    a = 1
+    r = 1
+    v = 1
+    d = X_pred.shape[1]
+
+    beta = 2 * np.log((iteration_count ** 2) * (2 * (np.pi ** 2)) * (1 / (3 * delta))) + \
+            (2 * d) * np.log((iteration_count ** 2) * d * b * r * (np.sqrt(np.log(4 * d * a * (1 / delta)))))
+    return mu + beta * sigma
+
+
+# Expected Improvement (EI) acquisition function
+def acquisition_ei(X_pred, gp, y_max):
+    mu, sigma = gp.predict(X_pred, return_std=True)
+    with np.errstate(divide='warn'):
+        z = (y_max - mu) / sigma
+        ei = (y_max - mu) * norm.cdf(z) + sigma * norm.pdf(z)
+        ei[sigma == 0.0] = 0.0  # Avoid divide by zero
+    return ei
+
+
+def plot_gp(iter, X, y, x_pred, y_pred, sigma):
+    # Plot the posterior distribution
+    plt.figure(figsize=(10, 5))
+    plt.plot(x_pred, objective_function(x_pred), 'r:', label='Objective function')
+    plt.plot(x_pred, y_pred, 'b-', label='GP mean')
+    plt.fill_between(x_pred.ravel(), y_pred - 1.96 * sigma, y_pred + 1.96 * sigma, alpha=0.2)
+    plt.scatter(X, y, c='r', s=50, zorder=10, edgecolors=(0, 0, 0))
+    plt.title(f"Iteration {iter + 1}")
+    plt.legend()
+
+
+def plot_regret(n_iterations, regrets):
+    # Plot simple regret over iterations
+    plt.figure(figsize=(10, 5))
+    plt.plot(range(1, n_iterations + 1), regrets, marker='o')
+    plt.title('Simple Regret over Iterations')
+    plt.xlabel('Iteration')
+    plt.ylabel('Simple Regret')
+    plt.grid(True)
+
+
+# Bayesian Optimization Loop
+def bayesian_optimization(n_iterations=20, n_initial=5, acquisition_func='gp_ucb'):
+    # Initial samples
+    X = np.random.uniform(0, 10, n_initial).reshape(-1, 1)
+    y = objective_function(X)
+
+    # GP model with custom RBF kernel
+    kernel = CustomKernel_RBF(length_scale=1.0)
+    # kernel = CustomKernel_RBF(length_scale=1.0)
+    gp = GaussianProcessRegressor(kernel=kernel, alpha=1e-6, n_restarts_optimizer=5)
+
+    regrets = []
+
+    for i in range(n_iterations):
+        # Fit the GP model
+        gp.fit(X, y)
+
+        # Predict the mean and standard deviation of the posterior distribution
+        x_pred = np.linspace(0, 10, 1000).reshape(-1, 1)
+        y_pred, sigma = gp.predict(x_pred, return_std=True)
+
+        plot_gp(i, X, y, x_pred, y_pred, sigma)
+
+        # Acquisition function selection
+        if acquisition_func == 'gp_ucb':
+            acquisition_values = acquisition_gp_ucb(x_pred, gp, i)
+        elif acquisition_func == 'ei':
+            best_y = np.max(y)
+            acquisition_values = acquisition_ei(x_pred, gp, best_y)
+        else:
+            raise ValueError(f"Unknown acquisition function: {acquisition_func}")
+
+        # Next sampling point
+        next_x = x_pred[np.argmax(acquisition_values)]
+
+        # Evaluate the objective function at the next point
+        next_y = objective_function(next_x.reshape(1, -1))
+
+        # Update the dataset
+        X = np.vstack((X, next_x))
+        y = np.append(y, next_y)
+
+        # Calculate simple regret
+        regret = np.abs(np.max(y) - np.max(objective_function(x_pred)))
+        regrets.append(regret)
+
+    plot_regret(n_iterations, regrets)
+    plt.show()
+
+
+if __name__ == '__main__':
+    n_initial = 5
+    n_iterations = 15
+    acquisition_func = 'gp_ucb'
+    # Run the Bayesian optimization with GP-UCB as the default acquisition function
+    bayesian_optimization(n_initial=5, n_iterations=15, acquisition_func='gp_ucb')
+
+
+
